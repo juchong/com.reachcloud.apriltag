@@ -1,3 +1,5 @@
+NOTE: This is a modified version of jp.keijiro.apriltag by Reach Cloud
+
 jp.keijiro.apriltag - AprilTag package for Unity
 ================================================
 

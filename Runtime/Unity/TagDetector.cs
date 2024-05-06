@@ -27,7 +27,7 @@ public sealed class TagDetector : System.IDisposable
     {
         // Object creation
         _detector = Interop.Detector.Create();
-        _family = Interop.Family.CreateTagStandard41h12();
+        _family = Interop.Family.CreateTag36h11();
         _image = Interop.ImageU8.Create(width, height);
 
         // Detector configuration
