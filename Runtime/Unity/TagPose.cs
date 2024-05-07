@@ -7,11 +7,11 @@ namespace AprilTag {
 //
 public struct TagPose
 {
-    public Detection Detection { get; }
+    public Interop.Detection Detection { get; }
     public Vector3 Position { get; }
     public Quaternion Rotation { get; }
 
-    public TagPose(Detection detection, Vector3 position, Quaternion rotation)
+    public TagPose(Interop.Detection detection, Vector3 position, Quaternion rotation)
     {
         Detection = detection;
         Position = position;
