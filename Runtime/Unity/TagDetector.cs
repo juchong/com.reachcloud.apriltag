@@ -34,6 +34,7 @@ public sealed class TagDetector : System.IDisposable
         _detector.ThreadCount = SystemConfig.PreferredThreadCount;
         _detector.QuadDecimate = decimation;
         _detector.AddFamily(_family);
+        _detector.Debug = true;
     }
 
     #endregion
@@ -70,58 +71,79 @@ public sealed class TagDetector : System.IDisposable
     List<TagPose> _detectedTags = new List<TagPose>();
     List<(string, long)> _profileData;
 
-    #endregion
+        #endregion
 
-    #region Detection/estimation procedure
+        #region Detection/estimation procedure
 
-    //
-    // We can simply use the multithreaded AprilTag detector for tag detection.
-    //
-    // In contrast, AprilTag only provides single-threaded pose estimator, so
-    // we have to manage threading ourselves.
-    //
-    // We don't want to spawn extra threads just for it, so we run them on
-    // Unity's job system. It's a bit complicated due to "impedance mismatch"
-    // things (unmanaged vs managed vs Unity DOTS).
-    //
-    void RunDetectorAndEstimator(float fov, float tagSize)
-    {
-        _profileData = null;
+        //
+        // We can simply use the multithreaded AprilTag detector for tag detection.
+        //
+        // In contrast, AprilTag only provides single-threaded pose estimator, so
+        // we have to manage threading ourselves.
+        //
+        // We don't want to spawn extra threads just for it, so we run them on
+        // Unity's job system. It's a bit complicated due to "impedance mismatch"
+        // things (unmanaged vs managed vs Unity DOTS).
+        //
+        void RunDetectorAndEstimator(float fov, float tagSize)
+        {
+            try
+            {
+                //UnityEngine.Debug.Log("[AprilTag]RunDetectorAndEstimator method called.");
 
-        // Run the AprilTag detector.
-        using var tags = _detector.Detect(_image);
-        var tagCount = tags.Length;
+                // Reset profile data
+                _profileData = null;
+                //UnityEngine.Debug.Log("[AprilTag]Profile data reset.");
 
-        // Convert the detector output into a NativeArray to make them
-        // accessible from the pose estimation job.
-        using var jobInput = new NativeArray<PoseEstimationJob.Input>
-          (tagCount, Allocator.TempJob);
+                // Run the AprilTag detector
+                //UnityEngine.Debug.Log("[AprilTag]Running the AprilTag detector...");
+                using var tags = _detector.Detect(_image);
+                var tagCount = tags.Length;
+                UnityEngine.Debug.Log($"[AprilTag]Detector found {tagCount} tags.");
 
-        var slice = new NativeSlice<PoseEstimationJob.Input>(jobInput);
+                // Convert the detector output into a NativeArray
+                using var jobInput = new NativeArray<PoseEstimationJob.Input>(tagCount, Allocator.TempJob);
+                //UnityEngine.Debug.Log($"[AprilTag]Created NativeArray for PoseEstimationJob.Input with size {tagCount}.");
 
-        for (var i = 0; i < tagCount; i++)
-            slice[i] = new PoseEstimationJob.Input(ref tags[i]);
+                var slice = new NativeSlice<PoseEstimationJob.Input>(jobInput);
 
-        // Pose estimation output buffer
-        using var jobOutput
-          = new NativeArray<TagPose>(tagCount, Allocator.TempJob);
+                for (var i = 0; i < tagCount; i++)
+                {
+                    slice[i] = new PoseEstimationJob.Input(ref tags[i]);
+                    UnityEngine.Debug.Log($"[AprilTag]Added tag {i} to job input: {tags[i]}.");
+                }
 
-        // Pose estimation job
-        var job = new PoseEstimationJob
-          (jobInput, jobOutput, _image.Width, _image.Height, fov, tagSize);
+                // Pose estimation output buffer
+                using var jobOutput = new NativeArray<TagPose>(tagCount, Allocator.TempJob);
+                //UnityEngine.Debug.Log($"[AprilTag]Created NativeArray for TagPose with size {tagCount}.");
 
-        // Run and wait the jobs.
-        job.Schedule(tagCount, 1, default(JobHandle)).Complete();
+                // Pose estimation job
+                var job = new PoseEstimationJob(jobInput, jobOutput, _image.Width, _image.Height, fov, tagSize);
+                //UnityEngine.Debug.Log($"[AprilTag]PoseEstimationJob created with parameters: " +
+                //                      $"Width = {_image.Width}, Height = {_image.Height}, FOV = {fov}, TagSize = {tagSize}.");
 
-        // Job output -> managed list
-        jobOutput.CopyTo(_detectedTags);
-    }
+                // Run and wait for the jobs to complete
+                //UnityEngine.Debug.Log("[AprilTag]Scheduling and completing PoseEstimationJob...");
+                job.Schedule(tagCount, 1, default(JobHandle)).Complete();
+                //UnityEngine.Debug.Log("[AprilTag]PoseEstimationJob completed.");
 
-    #endregion
+                // Copy job output to the managed list
+                jobOutput.CopyTo(_detectedTags);
+                //UnityEngine.Debug.Log($"[AprilTag]Copied job output to _detectedTags. Total detected tags: {_detectedTags.Count}.");
+            }
+            catch (Exception ex)
+            {
+                // Log any exceptions
+                UnityEngine.Debug.LogError($"[AprilTag]An exception occurred in RunDetectorAndEstimator: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
 
-    #region Profile data aggregation
 
-    List<(string, long)> GenerateProfileData()
+        #endregion
+
+        #region Profile data aggregation
+
+        List<(string, long)> GenerateProfileData()
     {
         var list = new List<(string, long)>();
         var stamps = _detector.TimeProfile.Stamps;
